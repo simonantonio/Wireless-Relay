@@ -2,7 +2,7 @@
 #ifndef _REMOTE_FUNCTIONS_H_
 #define _REMOTE_FUNCTIONS_H_
 
-#include "ESP8266.h"
+#include "ESP8266wifi.h"
 
 void GetPinState(int);
 void GetCommands(int);

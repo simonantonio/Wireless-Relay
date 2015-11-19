@@ -2,7 +2,7 @@
 #include "RemoteFunctions.h"
 #include <Arduino.h>
 
-extern ESP8266 *wifi;
+extern ESP8266wifi *wifi;
 
 //void InitCommands(ESP8266 *mwifi)
 //{
@@ -43,21 +43,26 @@ void SetPinOff(int p)
 }
 void GetVersion(int)
 {
-  String command = wifi->getLocalIP() + "/W/Version/1/";
-  wifi->send((const uint8_t*)command.c_str(), strlen(command.c_str()));
+  String command = wifi->getIP();
+  command += "/W/Version/1/";
+  wifi->send(SERVER,command.c_str());
 }
 
 void GetPinState(int p )
 {  
   int state = digitalRead(p);
-  String command = wifi->getLocalIP() + "/W/PinState/" + state + "/";
-  wifi->send((const uint8_t*)command.c_str(), strlen(command.c_str()));
+  String command = wifi->getIP();
+  command += "/W/PinState/";
+  command += state;
+  command += "/";
+  wifi->send(SERVER,command.c_str());
 }
 
 void GetCommands(int)
 {
-  String command = wifi->getLocalIP() + "/W/COMMANDS/PIN_ON,PIN_OFF,PIN_STATE,VERSION,HELP/";
-  wifi->send((const uint8_t*)command.c_str(), strlen(command.c_str()));
+  String command = wifi->getIP();
+  command += "/W/COMMANDS/PIN_ON,PIN_OFF,PIN_STATE,VERSION,HELP/";
+  wifi->send(SERVER,command.c_str());
 }
 
 

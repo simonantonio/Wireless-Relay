@@ -2,7 +2,7 @@
 #ifndef _COMMANDS_H_
 #define _COMMANDS_H_
 
-#include <String.h>
+//#include <String.h>
 #include "RemoteFunctions.h"
 
 //set station, on/off
@@ -32,7 +32,7 @@ struct command commands[] = {
 
 class Commander{
   public:
-    Commander(ESP8266 *wifi)
+    Commander(ESP8266wifi *wifi)
     {
       this->mWifi = wifi;
       this->mTimeout = 30 * 1000;//30 seconds
@@ -44,21 +44,26 @@ class Commander{
       //ask Wifi for commands
       uint8_t buffer[128] = {0};
       
-      String command = mWifi->getLocalIP() + "/R/Commands/0/";
-      mWifi->send((const uint8_t*)command.c_str(), strlen(command.c_str()));
-
-      unsigned long end = millis() + this->mTimeout;
+      String command = String(mWifi->getIP());
+      command += "/R/Commands/0/";
       
-      //wait for wifi to send response
-      uint32_t len = mWifi->recv(buffer, sizeof(buffer), this->mTimeout);
-      
-      if(len > 0) {
-        this->parse(buffer);
+      if(!mWifi->send(SERVER, command.c_str())) {
+        Serial.println("Unable to send message to server");
       }
+
+      WifiMessage in = mWifi->listenForIncomingMessage(1000);
+      if(in.hasData) {
+        Serial.print("Received message");
+        Serial.println(in.message);
+
+        this->parse(in.message);
+      }
+      
+      
     }
   private:
-    void parse(const uint8_t *buffer) {
-      String stz = String(*buffer);
+    void parse(String stz) {
+      
       int cmdLocation = stz.indexOf("/W/");
       if(cmdLocation > 0) {
         String cmd = stz.substring(cmdLocation);
@@ -83,7 +88,7 @@ class Commander{
       }
     }
   
-    ESP8266 *mWifi;
+    ESP8266wifi *mWifi;
     uint8_t mTimeout;
 };
 
