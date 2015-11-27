@@ -35,6 +35,7 @@ const char CIPSTART[] PROGMEM = "AT+CIPSTART=4,\"";
 const char CIPCLOSE[] PROGMEM = "AT+CIPCLOSE=4";
 const char TCP[] PROGMEM = "TCP";
 const char UDP[] PROGMEM = "UDP";
+const char RESET[] PROGMEM = "AT+RST";
 
 const char CWJAP[] PROGMEM = "AT+CWJAP=\"";
 
@@ -81,6 +82,8 @@ ESP8266wifi::ESP8266wifi(Stream &serialIn, Stream &serialOut, byte resetPin) {
     
     flags.debug = false;
     flags.echoOnOff = false;
+
+    remoteMessageString.reserve(BUFFER_SIZE);
 }
 
 ESP8266wifi::ESP8266wifi(Stream &serialIn, Stream &serialOut, byte resetPin, Stream &dbgSerial) {
@@ -102,6 +105,8 @@ ESP8266wifi::ESP8266wifi(Stream &serialIn, Stream &serialOut, byte resetPin, Str
     _dbgSerial = &dbgSerial;
     flags.debug = true;
     flags.echoOnOff = true;    
+
+    remoteMessageString.reserve(BUFFER_SIZE);
 }
 
 
@@ -116,7 +121,16 @@ bool ESP8266wifi::begin() {
     flags.localServerConfigured = false;
     flags.localApConfigured = false;
     serverRetries = 0;
-    
+
+    //clear serial buffer
+    while(this->_serialOut->available() > 0) {
+      this->_serialOut->read();//dump
+    }
+
+    //do a SW reset
+    writeCommand(RESET, EOL);
+    delay(500);//wait to boot
+
     //Do a HW reset
     bool statusOk = false;
     byte i;
@@ -197,21 +211,9 @@ char* ESP8266wifi::getIP(){
     msgIn[0] = '\0';
     writeCommand(CIFSR, EOL);
     byte code = readCommand(1000, STAIP, ERROR);
-    if(code == 1) {
+    if (code == 1) {
         // found staip
-        byte index=0;
-        while (_serialIn -> available()) {
-            char c = _serialIn -> read();
-            if (flags.debug)
-                _dbgSerial -> print(c);
-            delayMicroseconds(50);
-            if (c == '"') {
-                msgIn[index] = '\0';
-                break;
-            }
-            msgIn[index] = c;
-            index++;
-        }
+        readBuffer(&msgIn[0], sizeof(msgIn) - 1, '"');
         readCommand(10, OK, ERROR);
         return &msgIn[0];
     }
@@ -223,21 +225,9 @@ char* ESP8266wifi::getMAC(){
     msgIn[0] = '\0';
     writeCommand(CIFSR, EOL);
     byte code = readCommand(1000, STAMAC, ERROR);
-    if(code == 1) {
-        // found staip
-        byte index=0;
-        while (_serialIn -> available()) {
-            char c = _serialIn -> read();
-            if (flags.debug)
-                _dbgSerial -> print(c);
-            delayMicroseconds(50);
-            if (c == '"') {
-                msgIn[index] = '\0';
-                break;
-            }
-            msgIn[index] = c;
-            index++;
-        }
+    if (code == 1) {
+        // found stamac
+        readBuffer(&msgIn[0], sizeof(msgIn) - 1, '"');
         readCommand(10, OK, ERROR);
         return &msgIn[0];
     }
@@ -277,6 +267,11 @@ bool ESP8266wifi::connectToServer(){
     _serialOut -> println(_port);
     
     flags.connectedToServer = (readCommand(10000, LINKED, ALREADY) > 0);
+
+    //if its udp who cares if we connected or not
+    if(!flags.connectToServerUsingTCP) {
+      flags.connectedToServer = true;
+    }
     
     if(flags.connectedToServer)
         serverRetries = 0;
@@ -442,9 +437,53 @@ bool ESP8266wifi::send(char channel, const char * message, bool sendNow){
     return false;
 }
 
+const char* ESP8266wifi::readIncomingMessage() {  
+  int ch_id, packet_len;
+  char *pb; 
+  
+  this->clearBuffer();
+  
+  this->_serialIn->setTimeout(200);
+
+  if(this->_serialIn->available() == 0)
+    return '\0';
+    
+  this->_serialIn->readBytesUntil('\n',msgBuff, sizeof(msgBuff));
+
+  if(strncmp(msgBuff, "+IPD,", 5) == 0 ){    
+    sscanf(msgBuff+5, "%d,%d", &ch_id, &packet_len);
+    if(packet_len > 0) {
+     
+      pb = msgBuff+5;
+      while(*pb != ':') pb++;
+      pb++;
+
+      //Serial.print("pb: ");
+      //Serial.println(pb);
+
+      clearSerialBuffer();
+
+      return pb;
+    }
+  }
+  return '\0';
+}
+
+void ESP8266wifi::clearSerialBuffer(void) {
+       while ( this->_serialIn->available() > 0 ) {
+         this->_serialIn->read();
+       }
+}
+
+void ESP8266wifi::clearBuffer(void) {
+       for (int i =0;i<128;i++ ) {
+         msgBuff[i]=0;
+       }
+}
+
 WifiMessage ESP8266wifi::listenForIncomingMessage(int timeout){
     watchdog();
-    char buf[16] = {'\0'};
+    char buf[BUFFER_SIZE] = {'\0'};
     msgIn[0] = '\0';
     
     static WifiMessage msg;
@@ -463,37 +502,14 @@ WifiMessage ESP8266wifi::listenForIncomingMessage(int timeout){
     }
     //Message received..
     else if (msgOrRestart == 1) {
-        char channel = _serialIn -> read();
-        delayMicroseconds(50);//I dont know why ./
-        if(channel == SERVER)
+        char channel = readChar();
+        if (channel == SERVER)
             flags.connectedToServer = true;
-        _serialIn -> read(); // removing commma
-        byte length = 0;
-        while (_serialIn -> available()) {
-            char c = _serialIn -> read();
-            delayMicroseconds(50);//I dont know why ./
-            if (c == ':')
-                break;
-            else{
-                buf[length++] = (char)c;
-            }
-        }
-        //Extract the number of chars...
-        buf[length] = '\0';
-        length = atoi(buf);
-        byte i;
-        for (i = 0; i < length; i++) {
-            if( ((sizeof msgIn) - 2) >= i) {// Only read until buffer is full - null char
-                msgIn[i] =  (char) _serialIn -> read();
-                if(flags.debug)
-                    _dbgSerial -> print(msgIn[i]);
-                else
-                    delayMicroseconds(50);//I dont know why ./
-            }
-            else
-                break;
-        }
-        msgIn[i] = '\0'; //terminate string
+        readChar(); // removing comma
+        readBuffer(&buf[0], sizeof(buf) - 1, ':'); // read char count
+        readChar(); // removing ':' delim
+        byte length = atoi(buf);
+        readBuffer(&msgIn[0], min(length, sizeof(msgIn) - 1));
         msg.hasData = true;
         msg.channel = channel;
         msg.message = msgIn;
@@ -519,8 +535,8 @@ void ESP8266wifi::writeCommand(const char* text1 = NULL, const char* text2) {
 // NOTE: strings are stored in PROGMEM (auto-copied by this method)
 byte ESP8266wifi::readCommand(int timeout, const char* text1, const char* text2) {
     // setup buffers on stack & copy data from PROGMEM pointers
-    char buf1[16] = {'\0'};
-    char buf2[16] = {'\0'};
+    char buf1[20] = {'\0'};
+    char buf2[20] = {'\0'};
     if (text1 != NULL)
         strcpy_P(buf1, (char *) text1);
     if (text2 != NULL)
@@ -532,15 +548,9 @@ byte ESP8266wifi::readCommand(int timeout, const char* text1, const char* text2)
 
     // read chars until first match or timeout
     unsigned long stop = millis() + timeout;
-    char c;
     do {
         while (_serialIn->available()) {
-            c = _serialIn->read();
-            if (flags.debug)
-                _dbgSerial -> print(c);
-            else
-                delayMicroseconds(50);//I dont know why ./
-            
+            char c = readChar();
             pos1 = (c == buf1[pos1]) ? pos1 + 1 : 0;
             pos2 = (c == buf2[pos2]) ? pos2 + 1 : 0;
             if (len1 > 0 && pos1 == len1)
@@ -551,4 +561,26 @@ byte ESP8266wifi::readCommand(int timeout, const char* text1, const char* text2)
         delay(10);
     } while (millis() < stop);
     return 0;
+}
+
+// Reads count chars to a buffer, or until delim char is found
+byte ESP8266wifi::readBuffer(char* buf, byte count, char delim) {
+    byte pos = 0;
+    while (_serialIn->available() && pos < count) {
+        if (_serialIn->peek() == delim)
+            break;
+        buf[pos++] = readChar();
+    }
+    buf[pos] = '\0';
+    return pos;
+}
+
+// Reads a single char from serial input (with debug printout if configured)
+char ESP8266wifi::readChar() {
+    char c = _serialIn->read();
+    if (flags.debug)
+        _dbgSerial->print(c);
+    else
+        delayMicroseconds(50); // don't know why
+    return c;
 }

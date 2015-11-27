@@ -10,6 +10,7 @@
 #ifndef ESP8266wifi_h
 #define ESP8266wifi_h
 
+#define BUFFER_SIZE 128
 #define HW_RESET_RETRIES 3
 #define SERVER_CONNECT_RETRIES_BEFORE_HW_RESET 3
 
@@ -122,6 +123,8 @@ public:
      * Scan for incoming message, do this as often and as long as you can (use as sleep in loop)
      */
     WifiMessage listenForIncomingMessage(int timeoutMillis);
+
+    const char* readIncomingMessage();
     
 private:
     Stream* _serialIn;
@@ -150,13 +153,21 @@ private:
     byte serverRetries;
     bool watchdog();
     
-    char msgOut[26];//buffer for send method
-    char msgIn[26]; //buffer for listen method = limit of incoming message..
+    char msgOut[BUFFER_SIZE];//buffer for send method
+    char msgIn[BUFFER_SIZE]; //buffer for listen method = limit of incoming message..
 
     void writeCommand(const char* text1, const char* text2 = NULL);
     byte readCommand(int timeout, const char* text1 = NULL, const char* text2 = NULL);
+    byte readBuffer(char* buf, byte count, char delim = '\0');
+    char readChar();
 
     Stream* _dbgSerial;
+
+    //custom string for IPD messages
+    String remoteMessageString;
+    char msgBuff[128];
+    void clearBuffer(void);
+    void clearSerialBuffer(void);
 };
 
 #endif

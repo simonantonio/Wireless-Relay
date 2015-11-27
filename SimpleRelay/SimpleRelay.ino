@@ -1,13 +1,10 @@
 #include "ESP8266wifi.h"
 
 #include "Commands.h"
+#include "config.h"
 
 //#define DEBUG
-
-#define SSID "MEDUSA"
-#define PASSWORD "miling03"
-#define HOST "192.168.1.10"
-#define PORT "15000"
+#define VERBOSE_SETUP
 
 ESP8266wifi *wifi;
 Commander *commander;
@@ -15,6 +12,9 @@ Commander *commander;
 void setup() {
   
   // put your setup code here, to run once:
+#ifdef VERBOSE_SETUP
+  Serial.println("Turning off relays...");
+#endif
   pinMode(D18, OUTPUT);
   pinMode(D19, OUTPUT);
   pinMode(D20, OUTPUT);
@@ -31,6 +31,10 @@ void setup() {
   digitalWrite(D23, 0);
   digitalWrite(D24, 0);
 
+#ifdef VERBOSE_SETUP
+  Serial.println("Waiting for system to settle...");
+#endif
+
   delay(5000);
 
   Serial.println("Starting Simple Relay Setup");
@@ -42,6 +46,10 @@ void setup() {
   delay(100);
   Serial3.write("AT+CIPMUX=1\r\n");
   delay(100);
+
+#ifdef VERBOSE_SETUP
+  Serial.println("Creating Wifi Device...");
+#endif
   
 #ifdef DEBUG
   wifi = new ESP8266wifi(Serial3, Serial3, 10, Serial);
@@ -52,16 +60,28 @@ void setup() {
   
   delay(2000);
 
+#ifdef VERBOSE_SETUP
+  Serial.println("Connecting to AP...");
+#endif
   if(!wifi->connectToAP(SSID,PASSWORD)) {
     Serial.println("Unable to connect to access point");
   }
 
+#ifdef VERBOSE_SETUP
+  Serial.println("Set to UDP...");
+#endif
   wifi->setTransportToUDP();
 
+#ifdef VERBOSE_SETUP
+  Serial.println("Connect to host...");
+#endif
   if(!wifi->connectToServer(HOST, PORT)) {
     Serial.println("Unable to connect to server");
   }
-  
+
+#ifdef VERBOSE_SETUP
+  Serial.println("Setup commander...");
+#endif
   commander = new Commander(wifi);
 
   Serial.println("Simple Relay Driver r1 Now Ready...");
@@ -73,23 +93,18 @@ void loop() {
   if(!wifi->isStarted()) {
     wifi->begin();
   }
-  
-  //digitalWrite(D18, 1);
-
-  //delay (2000);
-
-  //digitalWrite(D18, 0);
-
-  //delay (2000);
-
-  //digitalWrite(D19, 1);
-
-  //delay (2000);
-
-  //digitalWrite(D19, 0);
+    
   commander->update();
-  
-  Serial.print(".");
+
+  //Serial.print("Free Ram: ");
+  //Serial.println(freeRam());
+}
+
+int freeRam () 
+{
+  extern int __heap_start, *__brkval; 
+  int v; 
+  return (int) &v - (__brkval == 0 ? (int) &__heap_start : (int) __brkval); 
 }
 
 
