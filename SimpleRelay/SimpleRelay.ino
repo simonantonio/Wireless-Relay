@@ -95,18 +95,5 @@ void loop() {
   }
     
   commander->update();
-
-  //Serial.print("Free Ram: ");
-  //Serial.println(freeRam());
 }
-
-int freeRam () 
-{
-  extern int __heap_start, *__brkval; 
-  int v; 
-  return (int) &v - (__brkval == 0 ? (int) &__heap_start : (int) __brkval); 
-}
-
-
-
 
